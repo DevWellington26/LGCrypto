@@ -1,4 +1,4 @@
-module github.com/DevWellington/LGCrypto
+module testando
 
 go 1.18
 

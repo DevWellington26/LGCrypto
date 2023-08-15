@@ -8,6 +8,8 @@ import (
 	"math/big"
 
 	"crypto/sha256"
+	"log"
+	"testando/blockchain"
 
 	"github.com/btcsuite/btcutil/base58"
 	"golang.org/x/crypto/ripemd160"
@@ -61,16 +63,19 @@ func Wallet() wallet {
 	}
 }
 
-func (w *wallet) GetPrivateKey() {
+func (w *wallet) GetPrivateKey() string {
 	fmt.Printf("Private Key ( 64 bits ) : %x\n", w.PrivateKey)
+	return w.PrivateKey
 }
 
-func (w *wallet) GetPublicKey() {
+func (w *wallet) GetPublicKey() []byte {
 	fmt.Printf("Public Key : %x\n", w.PublicKey[:])
+	return w.PublicKey
 }
 
-func (w *wallet) GetAddress() {
+func (w *wallet) GetAddress() string {
 	fmt.Printf("Address ( P2PHK ) : %s\n", w.Address)
+	return w.Address
 }
 
 func main() {
@@ -78,5 +83,31 @@ func main() {
 	fmt.Println("Gerando sua primeira wallet na nossa aplicação :\n")
 	wallet.GetPrivateKey()
 	wallet.GetPublicKey()
-	wallet.GetAddress()
+	addr := wallet.GetAddress()
+	fmt.Println("-------")
+	Blockchain := blockchain.Blockchain{
+		[]blockchain.Block{
+			blockchain.GenesisBlock(),
+		},
+		4,
+		[]blockchain.Transaction{},
+		50,
+	}
+	Block, err := Blockchain.GetLatestBlock()
+	Block2 := blockchain.Block{}
+	Block2.MineBlock(
+		[]blockchain.Transaction{
+			blockchain.Transaction{
+				"LGCoin",
+				addr,
+				float64(Blockchain.MiningReward),
+			},
+		},
+		Block.PreviousHash,
+		Blockchain.Difficulty,
+	)
+	fmt.Printf("Hash found : %s\n", Block2.Hash)
+	if err != nil {
+		log.Fatal("Erro!")
+	}
 }
