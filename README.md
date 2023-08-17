@@ -1,2 +1,2 @@
 # LGCrypto
-Just a experimental crypto written in golang.
+Just a experimental cryptocurrency written in golang.
