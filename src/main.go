@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"os"
 
 	"crypto/sha256"
 	"log"
@@ -13,11 +14,15 @@ import (
 
 	"github.com/btcsuite/btcutil/base58"
 	"golang.org/x/crypto/ripemd160"
+
+	"database/sql"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type wallet struct {
 	PrivateKey string
-	PublicKey  []byte
+	PublicKey  string
 	Address    string
 }
 
@@ -57,57 +62,118 @@ func Wallet() wallet {
 	//
 
 	return wallet{
-		string(privateKeyHash[:]),
-		publicKeyBytes,
+		fmt.Sprintf("%x", privateKeyHash[:]),
+		fmt.Sprintf("%x", publicKeyBytes),
 		generate_p2phk(publicKeyBytes[:]),
 	}
 }
 
 func (w *wallet) GetPrivateKey() string {
-	fmt.Printf("Private Key ( 64 bits ) : %x\n", w.PrivateKey)
 	return w.PrivateKey
 }
 
-func (w *wallet) GetPublicKey() []byte {
-	fmt.Printf("Public Key : %x\n", w.PublicKey[:])
+func (w *wallet) GetPublicKey() string {
 	return w.PublicKey
 }
 
 func (w *wallet) GetAddress() string {
-	fmt.Printf("Address ( P2PHK ) : %s\n", w.Address)
 	return w.Address
 }
 
 func main() {
-	wallet := Wallet()
-	fmt.Println("Gerando sua primeira wallet na nossa aplicação :\n")
-	wallet.GetPrivateKey()
-	wallet.GetPublicKey()
-	addr := wallet.GetAddress()
-	fmt.Println("-------")
-	Blockchain := blockchain.Blockchain{
-		[]blockchain.Block{
-			blockchain.GenesisBlock(),
-		},
-		4,
-		[]blockchain.Transaction{},
-		50,
+	var wallet wallet
+	var addr string
+	_, err := os.Stat("wallets/wallet.db")
+	if err != nil {
+		if os.IsNotExist(err) {
+			os.Mkdir("wallets", 0755)
+			wallet = Wallet()
+			fmt.Println("Gerando sua primeira wallet na nossa aplicação :\n")
+			privKey := wallet.GetPrivateKey()
+			publicKey := wallet.GetPublicKey()
+			addr = wallet.GetAddress()
+			db, err := sql.Open("sqlite3", "wallets/wallet.db")
+			if err != nil {
+				fmt.Println(err)
+			}
+			defer db.Close()
+			_, err = db.Exec(`
+			CREATE TABLE IF NOT EXISTS wallet (
+				id INTEGER PRIMARY KEY,
+				privateKey TEXT,
+				publicKey TEXT
+			)
+			`)
+			if err != nil {
+				log.Fatal(err)
+			}
+			_, err = db.Exec(`
+			CREATE TABLE IF NOT EXISTS addresses (
+				id INTEGER PRIMARY KEY,
+				address TEXT
+			)
+			`)
+			if err != nil {
+				log.Fatal(err)
+			}
+			_, err = db.Exec(`INSERT INTO wallet(privateKey, publicKey) VALUES (?,?)`, privKey, publicKey)
+			if err != nil {
+				fmt.Println(err)
+			}
+			_, err = db.Exec(`INSERT INTO addresses(address) VALUES (?)`, addr)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	} else {
+		fmt.Println("Wallet loaded!")
+		db, err := sql.Open("sqlite3", "wallets/wallet.db")
+		if err != nil {
+			fmt.Println(err)
+		}
+		defer db.Close()
+		rows, err := db.Query("SELECT privateKey, publicKey FROM wallet")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			rows.Scan(&wallet.PrivateKey, &wallet.PublicKey)
+		}
+		rows, err = db.Query("SELECT address FROM addresses")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			rows.Scan(&wallet.Address)
+		}
 	}
+
+	fmt.Println("-------")
+	fmt.Printf("Address ( P2PHK ) : %s\n", wallet.Address)
+	Blockchain := blockchain.LoadBlockchain()
 	Block, err := Blockchain.GetLatestBlock()
+	if err != nil {
+		log.Fatal(err)
+	}
 	Block2 := blockchain.Block{}
 	Block2.MineBlock(
 		[]blockchain.Transaction{
 			blockchain.Transaction{
 				"LGCoin",
-				addr,
+				wallet.Address,
 				float64(Blockchain.MiningReward),
 			},
 		},
-		Block.PreviousHash,
+		Block.HashBlock(),
 		Blockchain.Difficulty,
 	)
-	fmt.Printf("Hash found : %s\n", Block2.Hash)
+	Blockchain.AddBlock(Block2)
+	fmt.Printf("Balance : %.8f LG Coins\n", Blockchain.GetBalanceByAddress(wallet.Address))
+	fmt.Println("-------")
 	if err != nil {
 		log.Fatal("Erro!")
 	}
+
 }
